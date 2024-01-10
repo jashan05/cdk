@@ -1,0 +1,56 @@
+name: 'sonarqube-infrastructure-pipeline-$(Date:yyyyMMdd)1.0$(Rev:.r)'
+resources:
+  containers:
+    - container: nodejs
+      image: swfactory.aegon.com:5001/swf/nodejs:16
+variables:
+  artifact-dir: /opt/sonarqube-artifacts
+
+trigger:
+  batch: true
+  branches:
+    include: 
+      - master
+
+stages:
+  - stage: Acceptance
+    variables:
+      - name: CMDB_ASCI
+        value: CI002459810
+      - name: SWF_StageType
+        value: ACC
+      - group: aws-acc      
+    jobs:
+      - deployment: deployAcceptance
+        pool: rhel
+        container: nodejs
+        environment: acceptance
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: pipeline-templates/app-template.yaml
+                  parameters:
+                    SC_SSH: 'Sonarqube AWS Server - acc'
+  - stage: Production
+    variables:
+      - name: CMDB_ASCI
+        value: CI002459811
+      - name: SWF_StageType
+        value: PROD    
+      - group: aws-prod
+      - group: Pipeline Identification Fields - Azure DevOps - PROD    
+    dependsOn: Acceptance
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
+    jobs:
+      - deployment: deployProduction
+        pool: rhel
+        container: nodejs
+        environment: production
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: pipeline-templates/app-template.yaml
+                  parameters:
+                    SC_SSH: 'Sonarqube AWS Server - prd'

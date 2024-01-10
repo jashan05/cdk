@@ -1,0 +1,47 @@
+steps:
+  - template: common-template.yaml
+  - template: build/npm/install-and-audit.yaml@templates
+    parameters:
+      setSwfRegistry: true
+      packagePath: $(Build.SourcesDirectory)
+  - script: |
+      cd $(Build.SourcesDirectory)
+      chmod a+x cdk-deploy.sh
+      ./cdk-deploy.sh
+    displayName: CDK Deploy
+    env:
+      AMI: $(AMI)
+      TEAM: $(team)
+      PROJECT: $(application)
+      ENV: $(environment)
+      AWS_REGION: $(region)
+      ACCOUNT_ID: $(accountId)
+      CDK_APPROVAL: 'never'
+      CDK_TAG_AGT_MANAGED: 'false'
+      CDK_TAG_RESOURCE_CONTACT: $(TAG_RESOURCE_CONTACT)
+      CDK_TAG_DIVISION: $(TAG_DIVISION)
+      CDK_TAG_COST_CENTER: $(TAG_COST_CENTER)
+      CDK_TAG_HAWKEYE_BCM: $(TAG_HAWKEYE_BCM)
+  - script: |
+        #!/bin/bash
+        set -e
+        SONAR_HEALTH_CHECK_URL='https://sonar.$(hostedZone)/api/system/health'
+        SQ_ADMIN_PWD=$(aws ssm get-parameter --name "/sonarqube/administrator/credentials" --region $(region) --with-decryption | jq -c '.Parameter.Value' | tr -d '"')
+        if [[ $? -eq 0 ]]; then 
+          for counter in {1..10}
+            do
+                HEALTH_STATUS=$(curl -u admin:${SQ_ADMIN_PWD} ${SONAR_HEALTH_CHECK_URL} | jq -c '.health' | tr -d '"') || exit 1
+                echo "Status of SQ is $HEALTH_STATUS"
+                if [[ $HEALTH_STATUS == "GREEN" ]]
+                then
+                  echo "SonarQue is up" && break
+                elif [[ $counter == 10 ]]
+                then 
+                  echo "SonarQube is not able to come up. Check cloudwatch logs. Failing the pipeline..."
+                  exit 1
+                else
+                  echo "Waiting for SonarQube to come up" && sleep 2m
+                fi
+            done
+        else echo 'Not able to fetch the password from SSM parameter store'; fi
+    displayName: Check SonarQube status

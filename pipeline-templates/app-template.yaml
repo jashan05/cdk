@@ -1,0 +1,24 @@
+parameters:
+  - name: SC_SSH
+    type: string
+    values:
+    - Sonarqube AWS Server - acc
+    - Sonarqube AWS Server - prd
+
+steps:
+  - template: common-template.yaml
+  - task: CopyFilesOverSSH@0
+    inputs:
+      sshEndpoint: ${{ parameters.SC_SSH }}
+      sourceFolder: 'assets'
+      contents: '**'
+      targetFolder: '$(artifact-dir)'
+      readyTimeout: '20000'
+  - task: SSH@0
+    inputs:
+      sshEndpoint: ${{ parameters.SC_SSH }}
+      runOptions: 'inline'
+      inline: |
+        cd $(artifact-dir) && sudo ./sonar-deploy.sh $(artifact-dir)
+      interactiveSession: true
+      readyTimeout: '20000'

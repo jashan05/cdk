@@ -1,0 +1,22 @@
+steps:
+  - checkout: self
+    clean: true
+  - task: assumerole@1
+    inputs:
+      arn: '$(roleArn)'
+      externalId: '$(externalId)'
+      durationInSeconds: '1800'
+    displayName: DevOpsRole Assumed
+  - script: |
+      cd $(Build.Repository.LocalPath)
+      ls -ltr
+      aws_command="aws secretsmanager get-secret-value --secret-id swf/secrets --region $(region)"
+      secret=$($aws_command | jq -r '.SecretString')
+      url=`echo $secret | jq -r '.sonarqube_db_url'`
+      password=`echo $secret | jq -r '.sonarqube_db_password'`
+      sed -i 's@SONAR_JDBC_URL@'$url'@g' ./assets/sonar-$(environment).properties
+      sed -i 's@SONAR_JDBC_PASSWORD@'$password'@g' ./assets/sonar-$(environment).properties
+      mv ./assets/sonar-$(environment).properties ./assets/sonar.properties
+    workingDirectory: $(Build.SourcesDirectory)
+    failOnStderr: true
+    displayName: Get and replace Secret

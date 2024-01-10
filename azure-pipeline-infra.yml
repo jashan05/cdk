@@ -1,0 +1,88 @@
+name: 'sonarqube-infrastructure-pipeline-$(Date:yyyyMMdd)1.0$(Rev:.r)'
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: softwarefactory/pipeline-templates
+  containers:
+    - container: nodejs
+      image: swfactory.aegon.com:5001/swf/nodejs:16
+variables:
+  - name: team
+    value: swf
+  - name: application
+    value: sonarqube
+  - name: AMI
+    value: ENCRYPTED-RHEL7-BASE-*
+  - group: agt-resource-tags-api-stack
+
+trigger: none
+
+stages:
+  - stage: Build
+    variables:
+      - name: SWF_StageType
+        value: BUILD
+      - name: CMDB_BACI
+        value: CI002457572
+    jobs:
+      - job: build
+        pool: rhel
+        container: nodejs
+        steps:    
+          - task: SonarQubePrepare@5
+            inputs:
+              SonarQube: SC_SonarQubeNew_AegonNL
+              scannerMode: 'CLI'
+              configMode: 'manual'
+              cliProjectKey: $(TEAM_NAME)-$(application)-$(CMDB_BACI)
+              cliProjectName: $(TEAM_NAME)-$(application)
+              cliSources: '.'
+              extraProperties: |
+                # Additional properties that will be passed to the scanner, 
+                # Put one key=value per line, example:
+                sonar.issue.ignore.block=e1
+                sonar.issue.ignore.block.e1.beginBlockRegexp=\s*//\s*START-NO-SONAR-SCAN
+                sonar.issue.ignore.block.e1.endBlockRegexp=\s*//\s*END-NO-SONAR-SCAN
+          - task: SonarQubeAnalyze@5
+          - task: SonarQubePublish@5
+            inputs:
+              pollingTimeoutSec: '300'
+
+  - stage: Acceptance
+    variables:
+      - name: SWF_StageType
+        value: ACC
+      - name: CMDB_ASCI
+        value: CI002459810
+      - group: aws-acc
+    jobs:
+      - deployment: deployAcceptance
+        pool: rhel
+        container: nodejs
+        environment: acceptance
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: pipeline-templates/infra-template.yaml
+
+  - stage: Production
+    variables:
+      - name: CMDB_ASCI
+        value: CI002459811      
+      - name: SWF_StageType
+        value: PROD    
+      - group: aws-prod
+    dependsOn: Acceptance
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
+    jobs:
+      - deployment: deployProduction
+        pool: rhel
+        container: nodejs
+        environment: production
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: pipeline-templates/infra-template.yaml
